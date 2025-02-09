@@ -8,18 +8,28 @@
 #include <dt-bindings/zmk/keys.h>
 #include <dt-bindings/zmk/bt.h>
 
-/ {
-        keymap {
-                compatible = "zmk,keymap";
 
-                default_layer {
-                        bindings = <
-   &kp TAB        &kp Q    &kp W &kp E    &kp R &kp T      &kp Y   &kp U  &kp I     &kp O   &kp P      &kp BSPC
-   &mt LCTRL BSPC &kp A    &kp S &kp D    &kp F &kp G      &kp H   &kp J  &kp K     &kp L   &lt 2 SEMI &kp SQT
-   &kp LSHFT      &kp Z    &kp X &kp C    &kp V &kp B      &kp N   &kp M  &kp COMMA &kp DOT &kp FSLH   &kp ESC
-                                 &kp LGUI &mo 1 &kp SPACE  &kp RET &mo 2  &kp RALT
-                        >;
-                };
+/ {
+  behaviors {
+    td0: tap_dance_0 {
+      compatible = "zmk,behavior-tap-dance";
+      #binding-cells = <0>;
+      tapping-term-ms = <200>;
+      bindings = <&kp LSHFT>, <&kp ESC>;
+    };
+  };
+
+  keymap {
+    compatible = "zmk,keymap";
+
+    default_layer {
+        bindings = <
+          &kp TAB        &kp Q    &kp W &kp E    &kp R &kp T      &kp Y   &kp U  &kp I     &kp O   &kp P      &kp BSPC
+          &mt LCTRL BSPC &kp A    &kp S &kp D    &kp F &kp G      &kp H   &kp J  &kp K     &kp L   &lt 2 SEMI &kp SQT
+          &td0      &kp Z    &kp X &kp C    &kp V &kp B      &kp N   &kp M  &kp COMMA &kp DOT &kp FSLH   &kp RSHFT
+                                        &kp LGUI &mo 1 &kp SPACE  &kp RET &mo 2  &kp RALT
+        >;
+    };
 
                 lower_layer {
                         bindings = <
