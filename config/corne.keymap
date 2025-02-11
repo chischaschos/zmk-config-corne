@@ -59,7 +59,7 @@
       bindings = <
         &trans &trans &trans &trans   &trans   &trans     &trans  &trans   &trans   &trans &trans    &trans
         &trans &trans &trans &trans   &trans   &trans     &trans  &kp LEFT &kp DOWN &kp UP &kp RIGHT &trans
-        &trans &trans &trans &trans   &trans   &trans     &trans  &trans   &trans   &trans &trans    &trans
+        &trans &trans &trans &trans   &trans   &trans     &trans  &trans   &trans   &trans &trans    &to 3
                              &kp LGUI &kp LALT &kp SPACE  &kp RET &kp RALT &kp RGUI
       >;
     };
