@@ -42,9 +42,9 @@
 
     raise_layer {
       bindings = <
-        &kp  TAB  &kp EXCL  &kp AT    &kp LBKT &kp RBKT &kp PIPE    &trans    &kp AMPS  &kp ASTRK &trans &trans &trans
+        &kp  TAB  &kp EXCL  &kp AT    &kp LBRC &kp RBRC &kp PIPE    &trans    &kp AMPS  &kp ASTRK &trans &trans &trans
         &kp LCTRL &kp POUND &kp DLLR  &kp LPAR &kp RPAR &kp GRAVE   &kp MINUS &kp EQUAL &trans    &trans &trans &trans
-        &kp LSHFT &kp PRCNT &kp CARET &kp LBRC &kp RBRC &kp TILDE   &kp UNDER &kp PLUS  &trans    &trans &trans &trans
+        &kp LSHFT &kp PRCNT &kp CARET &kp LBKT &kp RBKT &kp TILDE   &kp UNDER &kp PLUS  &trans    &trans &trans &trans
                                       &kp LALT &kp LGUI &kp SPACE   &kp RET   &kp RGUI  &kp RALT
       >;
     };
