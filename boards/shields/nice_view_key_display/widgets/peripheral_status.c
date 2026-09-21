@@ -57,13 +57,6 @@ static void draw_screen(lv_obj_t *widget, lv_color_t cbuf[],
 
 /* ─── battery listener ────────────────────────────────────────────────────── */
 
-struct battery_status_state {
-    uint8_t level;
-#if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
-    bool usb_present;
-#endif
-};
-
 static void battery_status_update_cb(struct battery_status_state st) {
     struct zmk_widget_peripheral_status *w;
     SYS_SLIST_FOR_EACH_CONTAINER(&widgets, w, node) {

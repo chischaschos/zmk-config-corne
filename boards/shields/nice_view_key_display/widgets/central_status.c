@@ -143,18 +143,6 @@ static const char *keycode_to_str(uint16_t usage_page, uint32_t keycode,
 /* ─── widget state ─────────────────────────────────────────────────────────── */
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
-struct central_status_state {
-    /* top panel */
-    uint8_t  battery;
-    bool     charging;
-    bool     ble_connected;
-    bool     ble_bonded;
-    uint8_t  layer_index;
-    const char *layer_label;
-    /* bottom panel — last pressed key */
-    char     key_str[8];
-};
-
 /* ─── drawing ───────────────────────────────────────────────────────────────── */
 
 /*
@@ -237,13 +225,6 @@ static void redraw_all(struct zmk_widget_central_status *widget) {
 }
 
 /* ─── battery listener ────────────────────────────────────────────────────── */
-
-struct battery_status_state {
-    uint8_t level;
-#if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
-    bool usb_present;
-#endif
-};
 
 static void battery_status_update_cb(struct battery_status_state st) {
     struct zmk_widget_central_status *w;
