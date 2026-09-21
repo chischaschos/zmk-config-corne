@@ -1,4 +1,5 @@
 if(CONFIG_NICE_VIEW_KEY_DISPLAY_WIDGET)
+  zephyr_library_include_directories(${CMAKE_SOURCE_DIR}/include)
   zephyr_library_sources(widgets/util.c)
 
   if(NOT CONFIG_ZMK_SPLIT OR CONFIG_ZMK_SPLIT_ROLE_CENTRAL)

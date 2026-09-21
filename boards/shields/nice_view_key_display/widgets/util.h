@@ -6,7 +6,6 @@
 #pragma once
 
 #include <lvgl.h>
-#include <zmk/endpoints.h>
 
 #define CANVAS_SIZE 68
 
