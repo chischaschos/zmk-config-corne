@@ -1,0 +1,8 @@
+file_format: "1"
+id: nice_view_key_display
+name: nice!view Key Display
+type: shield
+url: https://github.com/nicekeyboards/nicenano
+requires:
+  - nice_view_adapter
+  - nice_view

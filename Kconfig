@@ -1,0 +1,2 @@
+# Root Kconfig for nice_view_key_display ZMK module
+# (intentionally empty — all Kconfig is in the shield)

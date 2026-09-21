@@ -1,0 +1,25 @@
+# Copyright (c) 2024 ZMK Contributors
+# SPDX-License-Identifier: MIT
+
+if SHIELD_NICE_VIEW_KEY_DISPLAY
+
+# We provide our own custom status screen, so disable the upstream
+# nice_view default widget (which also compiles custom_status_screen.c).
+# This prevents a duplicate zmk_display_status_screen() linker error.
+config NICE_VIEW_WIDGET_STATUS
+    default n
+
+# Force custom screen mode
+choice ZMK_DISPLAY_STATUS_SCREEN
+    default ZMK_DISPLAY_STATUS_SCREEN_CUSTOM
+endchoice
+
+config NICE_VIEW_KEY_DISPLAY_WIDGET
+    bool "Key press display widget for nice!view"
+    default y if ZMK_DISPLAY_STATUS_SCREEN_CUSTOM
+    select LV_FONT_MONTSERRAT_26
+    select LV_FONT_MONTSERRAT_14
+    select LV_USE_CANVAS
+    select LV_USE_LABEL
+
+endif # SHIELD_NICE_VIEW_KEY_DISPLAY
