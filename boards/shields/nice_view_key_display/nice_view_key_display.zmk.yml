@@ -5,4 +5,3 @@ type: shield
 url: https://github.com/nicekeyboards/nicenano
 requires:
   - nice_view_adapter
-  - nice_view

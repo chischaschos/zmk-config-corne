@@ -14,6 +14,7 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <string.h>
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include <zmk/display.h>
@@ -29,8 +30,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/ble.h>
 #include <zmk/endpoints.h>
 #include <zmk/keymap.h>
-#include <zmk/hid.h>
-
 #include "util.h"
 #include "central_status.h"
 

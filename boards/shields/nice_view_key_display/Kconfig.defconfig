@@ -3,17 +3,40 @@
 
 if SHIELD_NICE_VIEW_KEY_DISPLAY
 
-# We provide our own custom status screen, so disable the upstream
-# nice_view default widget (which also compiles custom_status_screen.c).
-# This prevents a duplicate zmk_display_status_screen() linker error.
-config NICE_VIEW_WIDGET_STATUS
+# ── Display driver settings (mirrors nice_view Kconfig.defconfig) ───────────
+config LV_Z_VDB_SIZE
+    default 100
+
+config LV_DPI_DEF
+    default 161
+
+config LV_Z_BITS_PER_PIXEL
+    default 1
+
+choice LV_COLOR_DEPTH
+    default LV_COLOR_DEPTH_1
+endchoice
+
+choice ZMK_DISPLAY_WORK_QUEUE
+    default ZMK_DISPLAY_WORK_QUEUE_DEDICATED
+endchoice
+
+config LV_Z_MEM_POOL_SIZE
+    default 4096
+
+# ── Enable display ───────────────────────────────────────────────────────────
+config ZMK_DISPLAY
+    default y
+
+config ZMK_DISPLAY_BLANK_ON_IDLE
     default n
 
-# Force custom screen mode
+# ── Use our custom status screen ─────────────────────────────────────────────
 choice ZMK_DISPLAY_STATUS_SCREEN
     default ZMK_DISPLAY_STATUS_SCREEN_CUSTOM
 endchoice
 
+# ── Our widget ───────────────────────────────────────────────────────────────
 config NICE_VIEW_KEY_DISPLAY_WIDGET
     bool "Key press display widget for nice!view"
     default y if ZMK_DISPLAY_STATUS_SCREEN_CUSTOM
@@ -21,5 +44,6 @@ config NICE_VIEW_KEY_DISPLAY_WIDGET
     select LV_FONT_MONTSERRAT_14
     select LV_USE_CANVAS
     select LV_USE_LABEL
+    select LV_USE_IMG
 
 endif # SHIELD_NICE_VIEW_KEY_DISPLAY

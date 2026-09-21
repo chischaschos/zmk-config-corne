@@ -1,0 +1,25 @@
+/*
+ * Copyright (c) 2024 ZMK Contributors
+ * SPDX-License-Identifier: MIT
+ *
+ * Inlines the nice_view shield overlay so we don't depend on SHIELD_NICE_VIEW
+ * (which would imply NICE_VIEW_WIDGET_STATUS and cause a duplicate
+ * zmk_display_status_screen() link error).
+ */
+
+&nice_view_spi {
+    status = "okay";
+    nice_view: ls0xx@0 {
+        compatible = "sharp,ls0xx";
+        spi-max-frequency = <1000000>;
+        reg = <0>;
+        width = <160>;
+        height = <68>;
+    };
+};
+
+/ {
+    chosen {
+        zephyr,display = &nice_view;
+    };
+};
