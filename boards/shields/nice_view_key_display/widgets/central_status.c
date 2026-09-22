@@ -195,17 +195,26 @@ static void draw_profile(lv_obj_t *widget, lv_color_t cbuf[],
     init_rect_dsc(&rect_bg, LVGL_BACKGROUND);
     lv_canvas_draw_rect(canvas, 0, 0, CANVAS_W, CANVAS_H, &rect_bg);
 
-    /* 5 circles: diameter=10, gap=4. total=5*10+4*4=66. start_x=(68-66)/2=1 */
-    const int circle_d = 10;
-    const int gap = 4;
-    const int total_w = 5 * circle_d + 4 * gap;
-    const int start_x = (CANVAS_W - total_w) / 2;
-    const int cy = (CANVAS_H - circle_d) / 2;
+    /* 5 circles in two rows: row 1 = [1][2][3], row 2 = [4][5]
+     * Circle diameter=16, gap=6 between circles, row gap=4.
+     * Row 1: 3*16 + 2*6 = 60px wide, centered in 68.
+     * Row 2: 2*16 + 1*6 = 38px wide, centered in 68.
+     */
+    const int circle_d = 16;
+    const int gap = 6;
+    const int row_gap = 4;
+    const int row1_w = 3 * circle_d + 2 * gap;
+    const int row2_w = 2 * circle_d + 1 * gap;
+    const int row1_x = (CANVAS_W - row1_w) / 2;
+    const int row2_x = (CANVAS_W - row2_w) / 2;
+    const int total_h = 2 * circle_d + row_gap;
+    const int row1_y = (CANVAS_H - total_h) / 2;
+    const int row2_y = row1_y + circle_d + row_gap;
 
     lv_draw_rect_dsc_t circle_outline, circle_filled;
     init_rect_dsc(&circle_outline, LVGL_BACKGROUND);
     circle_outline.border_color = LVGL_FOREGROUND;
-    circle_outline.border_width = 1;
+    circle_outline.border_width = 2;
     circle_outline.radius = circle_d / 2;
 
     init_rect_dsc(&circle_filled, LVGL_FOREGROUND);
@@ -217,19 +226,28 @@ static void draw_profile(lv_obj_t *widget, lv_color_t cbuf[],
     lv_draw_label_dsc_t lbl_num_inactive;
     init_label_dsc(&lbl_num_inactive, LVGL_FOREGROUND, &lv_font_montserrat_14, LV_TEXT_ALIGN_CENTER);
 
+    /* Positions: row, column offset for each of the 5 profiles */
+    const int pos_x[] = {
+        row1_x + 0 * (circle_d + gap),
+        row1_x + 1 * (circle_d + gap),
+        row1_x + 2 * (circle_d + gap),
+        row2_x + 0 * (circle_d + gap),
+        row2_x + 1 * (circle_d + gap),
+    };
+    const int pos_y[] = { row1_y, row1_y, row1_y, row2_y, row2_y };
+
     for (int i = 0; i < 5; i++) {
-        int cx = start_x + i * (circle_d + gap);
         bool active = (i == state->active_profile);
 
         if (active) {
-            lv_canvas_draw_rect(canvas, cx, cy, circle_d, circle_d, &circle_filled);
+            lv_canvas_draw_rect(canvas, pos_x[i], pos_y[i], circle_d, circle_d, &circle_filled);
         } else {
-            lv_canvas_draw_rect(canvas, cx, cy, circle_d, circle_d, &circle_outline);
+            lv_canvas_draw_rect(canvas, pos_x[i], pos_y[i], circle_d, circle_d, &circle_outline);
         }
 
-        /* number centered in circle: font 14px in 10px circle, y offset -2 */
+        /* number centered in circle: font 14px in 16px circle, y offset +1 */
         char num[2] = { '1' + i, '\0' };
-        lv_canvas_draw_text(canvas, cx, cy - 2, circle_d,
+        lv_canvas_draw_text(canvas, pos_x[i], pos_y[i] + 1, circle_d,
                             active ? &lbl_num : &lbl_num_inactive, num);
     }
 

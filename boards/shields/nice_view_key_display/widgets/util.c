@@ -52,11 +52,13 @@ void rotate_canvas_rect(lv_obj_t *canvas, lv_color_t cbuf[],
         cbuf[i] = LVGL_BACKGROUND;
     }
 
-    /* rotate */
+    /* rotate 90 deg CCW (matches LVGL's 900 deg transform used by peripheral)
+     * CCW: dx = (src_h - 1) - sy,  dy = sx
+     */
     for (uint16_t sy = 0; sy < src_h; sy++) {
         for (uint16_t sx = 0; sx < src_w; sx++) {
-            uint16_t dx = sy;
-            uint16_t dy = (src_w - 1) - sx;
+            uint16_t dx = (src_h - 1) - sy;
+            uint16_t dy = sx;
             cbuf[dy * dst_w + dx] = tmp[sy * src_w + sx];
         }
     }
