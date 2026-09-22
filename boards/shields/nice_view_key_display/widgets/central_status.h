@@ -14,6 +14,7 @@ struct central_status_state {
     bool        charging;
     bool        ble_connected;
     bool        ble_bonded;
+    uint8_t     active_profile;   /* 0-4 */
     uint8_t     layer_index;
     const char *layer_label;
     char        key_str[8];
@@ -22,8 +23,11 @@ struct central_status_state {
 struct zmk_widget_central_status {
     sys_snode_t node;
     lv_obj_t   *obj;
-    lv_color_t  cbuf_top[CANVAS_SIZE * CANVAS_SIZE];
-    lv_color_t  cbuf_bot[CANVAS_SIZE * CANVAS_SIZE];
+    /* 4 canvases: each drawn 68w x 40h, rotated to 40w x 68h on screen */
+    lv_color_t  cbuf_profile[CANVAS_W * CANVAS_H];
+    lv_color_t  cbuf_battery[CANVAS_W * CANVAS_H];
+    lv_color_t  cbuf_layer[CANVAS_W * CANVAS_H];
+    lv_color_t  cbuf_key[CANVAS_W * CANVAS_H];
     struct central_status_state state;
 };
 

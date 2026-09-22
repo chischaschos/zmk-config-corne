@@ -2,14 +2,15 @@
  * Copyright (c) 2024 ZMK Contributors
  * SPDX-License-Identifier: MIT
  *
- * central_status.c — Left (central) half display.
+ * central_status.c -- Left (central) half display.
  *
- * Layout (physical screen is 160 x 68 px, rotated):
- *   Top canvas    (68x68): current layer name + BT/USB icon + battery
- *   Bottom canvas (68x68): last pressed key — displayed BIG in the centre
- *
- * The two 68x68 tiles are each drawn "upright" and then rotated 90° so they
- * appear correctly on the rotated display hardware.
+ * Layout (physical screen is 160x68, rotated 90 deg):
+ * 4 tiles, each 68w x 40h drawn, rotated to 40w x 68h on screen.
+ * From top to bottom as the user sees it:
+ *   1. BT profile selector  (5 circles, active one filled)
+ *   2. Battery bar + WiFi connection icon
+ *   3. Layer name
+ *   4. Last pressed key (shift-aware)
  */
 
 #include <zephyr/kernel.h>
@@ -33,15 +34,14 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include "util.h"
 #include "central_status.h"
 
-/* ─── HID usage page / keycode ranges ─────────────────────────────────────── */
+/* --- HID usage page / keycode ranges --- */
 #define HID_USAGE_KEY       0x07
 #define HID_USAGE_CONSUMER  0x0C
 
-/* HID keyboard keycodes (usage page 0x07) */
 #define HID_KEY_A           0x04
 #define HID_KEY_Z           0x1D
 #define HID_KEY_1           0x1E
-#define HID_KEY_0           0x27   /* HID 0x27 = '0' key */
+#define HID_KEY_0           0x27
 #define HID_KEY_ENTER       0x28
 #define HID_KEY_ESC         0x29
 #define HID_KEY_BSPC        0x2A
@@ -64,6 +64,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define HID_KEY_LEFT        0x50
 #define HID_KEY_DOWN        0x51
 #define HID_KEY_UP          0x52
+#define HID_KEY_DEL         0x4C
+#define HID_KEY_HOME        0x4A
+#define HID_KEY_END         0x4D
+#define HID_KEY_PGUP        0x4B
+#define HID_KEY_PGDN        0x4E
 #define HID_KEY_LCTRL       0xE0
 #define HID_KEY_LSHFT       0xE1
 #define HID_KEY_LALT        0xE2
@@ -73,16 +78,29 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define HID_KEY_RALT        0xE6
 #define HID_KEY_RGUI        0xE7
 
-/* ─── keycode → display string ─────────────────────────────────────────────── */
+/* --- global modifier tracking --- */
+static uint8_t held_mods = 0;
+
+/* Map modifier keycodes to bit positions (HID modifier bitmap) */
+static int mod_bit(uint32_t keycode) {
+    if (keycode >= HID_KEY_LCTRL && keycode <= HID_KEY_RGUI) {
+        return (int)(keycode - HID_KEY_LCTRL);
+    }
+    return -1;
+}
+
+/* --- keycode to display string --- */
 static const char *keycode_to_str(uint16_t usage_page, uint32_t keycode,
-                                   uint8_t mods) {
+                                   uint8_t explicit_mods) {
     if (usage_page != HID_USAGE_KEY) {
         return "???";
     }
 
+    /* combine explicit modifiers (from the binding) with currently held mods */
+    uint8_t mods = explicit_mods | held_mods;
     bool shift = (mods & (BIT(1) | BIT(5))) != 0; /* LSHFT | RSHFT */
 
-    /* A–Z */
+    /* A-Z */
     if (keycode >= HID_KEY_A && keycode <= HID_KEY_Z) {
         static char buf[2];
         buf[0] = (char)((shift ? 'A' : 'a') + (keycode - HID_KEY_A));
@@ -90,7 +108,7 @@ static const char *keycode_to_str(uint16_t usage_page, uint32_t keycode,
         return buf;
     }
 
-    /* 1–9, 0 */
+    /* 1-9, 0 */
     if (keycode >= HID_KEY_1 && keycode <= HID_KEY_0) {
         static const char *nums_plain[] = {"1","2","3","4","5","6","7","8","9","0"};
         static const char *nums_shift[] = {"!","@","#","$","%","^","&","*","(",")"};
@@ -98,7 +116,7 @@ static const char *keycode_to_str(uint16_t usage_page, uint32_t keycode,
         return shift ? nums_shift[idx] : nums_plain[idx];
     }
 
-    /* F1–F12 */
+    /* F1-F12 */
     if (keycode >= HID_KEY_F1 && keycode <= HID_KEY_F12) {
         static const char *fkeys[] = {
             "F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"
@@ -113,6 +131,11 @@ static const char *keycode_to_str(uint16_t usage_page, uint32_t keycode,
     case HID_KEY_BSPC:   return "BSPC";
     case HID_KEY_TAB:    return "TAB";
     case HID_KEY_SPACE:  return "SPC";
+    case HID_KEY_DEL:    return "DEL";
+    case HID_KEY_HOME:   return "HOME";
+    case HID_KEY_END:    return "END";
+    case HID_KEY_PGUP:   return "PGUP";
+    case HID_KEY_PGDN:   return "PGDN";
     case HID_KEY_UP:     return LV_SYMBOL_UP;
     case HID_KEY_DOWN:   return LV_SYMBOL_DOWN;
     case HID_KEY_LEFT:   return LV_SYMBOL_LEFT;
@@ -140,68 +163,159 @@ static const char *keycode_to_str(uint16_t usage_page, uint32_t keycode,
     }
 }
 
-/* ─── widget state ─────────────────────────────────────────────────────────── */
+/* --- widget state --- */
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
-/* ─── drawing ───────────────────────────────────────────────────────────────── */
+/* --- drawing helpers --- */
 
 /*
- * Top panel: battery bar on left, layer name centred, BT icon top-right.
- * All drawing happens inside a 68x68 canvas that is then rotated 90°.
+ * Helper: set canvas to drawing dimensions (68w x 40h) before drawing.
+ * rotate_canvas_rect will reconfigure to (40w x 68h) after.
  */
-static void draw_top(lv_obj_t *widget, lv_color_t cbuf[],
-                     const struct central_status_state *state) {
+static void canvas_set_draw_mode(lv_obj_t *canvas, lv_color_t cbuf[]) {
+    lv_canvas_set_buffer(canvas, cbuf, CANVAS_W, CANVAS_H, LV_IMG_CF_TRUE_COLOR);
+}
+
+/* Canvas indices (children of widget->obj):
+ *   0 = profile (TOP_RIGHT  = top of rotated screen)
+ *   1 = battery
+ *   2 = layer
+ *   3 = key     (TOP_LEFT   = bottom of rotated screen)
+ */
+
+/*
+ * Panel 1: BT profile selector -- 5 circles, active one filled.
+ */
+static void draw_profile(lv_obj_t *widget, lv_color_t cbuf[],
+                         const struct central_status_state *state) {
     lv_obj_t *canvas = lv_obj_get_child(widget, 0);
+    canvas_set_draw_mode(canvas, cbuf);
+
+    lv_draw_rect_dsc_t rect_bg;
+    init_rect_dsc(&rect_bg, LVGL_BACKGROUND);
+    lv_canvas_draw_rect(canvas, 0, 0, CANVAS_W, CANVAS_H, &rect_bg);
+
+    /* 5 circles: diameter=10, gap=4. total=5*10+4*4=66. start_x=(68-66)/2=1 */
+    const int circle_d = 10;
+    const int gap = 4;
+    const int total_w = 5 * circle_d + 4 * gap;
+    const int start_x = (CANVAS_W - total_w) / 2;
+    const int cy = (CANVAS_H - circle_d) / 2;
+
+    lv_draw_rect_dsc_t circle_outline, circle_filled;
+    init_rect_dsc(&circle_outline, LVGL_BACKGROUND);
+    circle_outline.border_color = LVGL_FOREGROUND;
+    circle_outline.border_width = 1;
+    circle_outline.radius = circle_d / 2;
+
+    init_rect_dsc(&circle_filled, LVGL_FOREGROUND);
+    circle_filled.radius = circle_d / 2;
+
+    lv_draw_label_dsc_t lbl_num;
+    init_label_dsc(&lbl_num, LVGL_BACKGROUND, &lv_font_montserrat_14, LV_TEXT_ALIGN_CENTER);
+
+    lv_draw_label_dsc_t lbl_num_inactive;
+    init_label_dsc(&lbl_num_inactive, LVGL_FOREGROUND, &lv_font_montserrat_14, LV_TEXT_ALIGN_CENTER);
+
+    for (int i = 0; i < 5; i++) {
+        int cx = start_x + i * (circle_d + gap);
+        bool active = (i == state->active_profile);
+
+        if (active) {
+            lv_canvas_draw_rect(canvas, cx, cy, circle_d, circle_d, &circle_filled);
+        } else {
+            lv_canvas_draw_rect(canvas, cx, cy, circle_d, circle_d, &circle_outline);
+        }
+
+        /* number centered in circle: font 14px in 10px circle, y offset -2 */
+        char num[2] = { '1' + i, '\0' };
+        lv_canvas_draw_text(canvas, cx, cy - 2, circle_d,
+                            active ? &lbl_num : &lbl_num_inactive, num);
+    }
+
+    rotate_canvas_rect(canvas, cbuf, CANVAS_W, CANVAS_H);
+}
+
+/*
+ * Panel 2: Battery bar + connection icon.
+ */
+static void draw_battery(lv_obj_t *widget, lv_color_t cbuf[],
+                         const struct central_status_state *state) {
+    lv_obj_t *canvas = lv_obj_get_child(widget, 1);
+    canvas_set_draw_mode(canvas, cbuf);
 
     lv_draw_rect_dsc_t rect_bg, rect_fg, rect_bar;
     init_rect_dsc(&rect_bg, LVGL_BACKGROUND);
     init_rect_dsc(&rect_fg, LVGL_FOREGROUND);
     init_rect_dsc(&rect_bar, LVGL_FOREGROUND);
 
-    lv_draw_label_dsc_t lbl_layer, lbl_icon;
-    init_label_dsc(&lbl_layer, LVGL_FOREGROUND, &lv_font_montserrat_14, LV_TEXT_ALIGN_CENTER);
-    init_label_dsc(&lbl_icon,  LVGL_FOREGROUND, &lv_font_montserrat_14, LV_TEXT_ALIGN_RIGHT);
+    lv_draw_label_dsc_t lbl_icon;
+    init_label_dsc(&lbl_icon, LVGL_FOREGROUND, &lv_font_montserrat_14, LV_TEXT_ALIGN_CENTER);
 
-    /* background */
-    lv_canvas_draw_rect(canvas, 0, 0, CANVAS_SIZE, CANVAS_SIZE, &rect_bg);
+    lv_canvas_draw_rect(canvas, 0, 0, CANVAS_W, CANVAS_H, &rect_bg);
 
-    /* ── battery bar (top strip, 68 px wide, 8 px tall) ── */
+    /* Battery bar vertically centered: y = (40-10)/2 = 15 */
+    int bar_y = (CANVAS_H - 10) / 2;
+
     /* outline */
-    lv_canvas_draw_rect(canvas, 0, 1, 60, 10, &rect_fg);
-    lv_canvas_draw_rect(canvas, 1, 2, 58, 8,  &rect_bg);
-    /* fill: level is 0–100 */
-    uint8_t fill = (uint8_t)((state->battery * 56u + 50u) / 100u);
-    if (fill > 0) {
-        lv_canvas_draw_rect(canvas, 2, 3, fill, 6, &rect_bar);
-    }
-    /* terminal nub */
-    lv_canvas_draw_rect(canvas, 60, 3, 4, 6, &rect_fg);
-    lv_canvas_draw_rect(canvas, 61, 4, 2, 4, &rect_bg);
+    lv_canvas_draw_rect(canvas, 2, bar_y, 44, 10, &rect_fg);
+    lv_canvas_draw_rect(canvas, 3, bar_y + 1, 42, 8, &rect_bg);
 
-    /* ── BT / USB icon top-right ── */
+    /* fill */
+    uint8_t fill = (uint8_t)((state->battery * 40u + 50u) / 100u);
+    if (fill > 0) {
+        lv_canvas_draw_rect(canvas, 4, bar_y + 2, fill, 6, &rect_bar);
+    }
+
+    /* terminal nub */
+    lv_canvas_draw_rect(canvas, 46, bar_y + 2, 4, 6, &rect_fg);
+    lv_canvas_draw_rect(canvas, 47, bar_y + 3, 2, 4, &rect_bg);
+
+    /* Connection icon to the right of battery */
     const char *icon = state->ble_bonded
         ? (state->ble_connected ? LV_SYMBOL_WIFI : LV_SYMBOL_CLOSE)
         : LV_SYMBOL_SETTINGS;
-    lv_canvas_draw_text(canvas, 0, 0, CANVAS_SIZE, &lbl_icon, icon);
+    lv_canvas_draw_text(canvas, 52, bar_y - 2, CANVAS_W - 52, &lbl_icon, icon);
 
-    /* ── layer name centred ── */
+    rotate_canvas_rect(canvas, cbuf, CANVAS_W, CANVAS_H);
+}
+
+/*
+ * Panel 3: Layer name.
+ */
+static void draw_layer(lv_obj_t *widget, lv_color_t cbuf[],
+                       const struct central_status_state *state) {
+    lv_obj_t *canvas = lv_obj_get_child(widget, 2);
+    canvas_set_draw_mode(canvas, cbuf);
+
+    lv_draw_rect_dsc_t rect_bg;
+    init_rect_dsc(&rect_bg, LVGL_BACKGROUND);
+
+    lv_draw_label_dsc_t lbl_layer;
+    init_label_dsc(&lbl_layer, LVGL_FOREGROUND, &lv_font_montserrat_14, LV_TEXT_ALIGN_CENTER);
+
+    lv_canvas_draw_rect(canvas, 0, 0, CANVAS_W, CANVAS_H, &rect_bg);
+
     char layer_text[16] = {};
     if (state->layer_label != NULL && strlen(state->layer_label) > 0) {
         strncpy(layer_text, state->layer_label, sizeof(layer_text) - 1);
     } else {
         snprintf(layer_text, sizeof(layer_text), "L%d", state->layer_index);
     }
-    lv_canvas_draw_text(canvas, 0, 22, CANVAS_SIZE, &lbl_layer, layer_text);
 
-    rotate_canvas(canvas, cbuf);
+    /* center vertically: font ~14px, canvas 40px -> y = 13 */
+    lv_canvas_draw_text(canvas, 0, 13, CANVAS_W, &lbl_layer, layer_text);
+
+    rotate_canvas_rect(canvas, cbuf, CANVAS_W, CANVAS_H);
 }
 
 /*
- * Bottom panel: the last-pressed key glyph, drawn very large and centred.
+ * Panel 4: Last pressed key, large and centered.
  */
-static void draw_bottom(lv_obj_t *widget, lv_color_t cbuf[],
-                        const struct central_status_state *state) {
-    lv_obj_t *canvas = lv_obj_get_child(widget, 1);
+static void draw_key(lv_obj_t *widget, lv_color_t cbuf[],
+                     const struct central_status_state *state) {
+    lv_obj_t *canvas = lv_obj_get_child(widget, 3);
+    canvas_set_draw_mode(canvas, cbuf);
 
     lv_draw_rect_dsc_t rect_bg;
     init_rect_dsc(&rect_bg, LVGL_BACKGROUND);
@@ -209,22 +323,15 @@ static void draw_bottom(lv_obj_t *widget, lv_color_t cbuf[],
     lv_draw_label_dsc_t lbl_key;
     init_label_dsc(&lbl_key, LVGL_FOREGROUND, &lv_font_montserrat_26, LV_TEXT_ALIGN_CENTER);
 
-    lv_canvas_draw_rect(canvas, 0, 0, CANVAS_SIZE, CANVAS_SIZE, &rect_bg);
+    lv_canvas_draw_rect(canvas, 0, 0, CANVAS_W, CANVAS_H, &rect_bg);
 
-    /* centre vertically: font height ~26 px, canvas 68 px → top at y=21 */
-    lv_canvas_draw_text(canvas, 0, 21, CANVAS_SIZE, &lbl_key, state->key_str);
+    /* center vertically: font ~26px, canvas 40px -> y = 7 */
+    lv_canvas_draw_text(canvas, 0, 7, CANVAS_W, &lbl_key, state->key_str);
 
-    rotate_canvas(canvas, cbuf);
+    rotate_canvas_rect(canvas, cbuf, CANVAS_W, CANVAS_H);
 }
 
-/* ─── widget instance ─────────────────────────────────────────────────────── */
-
-static void redraw_all(struct zmk_widget_central_status *widget) {
-    draw_top(widget->obj, widget->cbuf_top, &widget->state);
-    draw_bottom(widget->obj, widget->cbuf_bot, &widget->state);
-}
-
-/* ─── battery listener ────────────────────────────────────────────────────── */
+/* --- battery listener --- */
 
 static void battery_status_update_cb(struct battery_status_state st) {
     struct zmk_widget_central_status *w;
@@ -233,7 +340,7 @@ static void battery_status_update_cb(struct battery_status_state st) {
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
         w->state.charging = st.usb_present;
 #endif
-        draw_top(w->obj, w->cbuf_top, &w->state);
+        draw_battery(w->obj, w->cbuf_battery, &w->state);
     }
 }
 
@@ -254,26 +361,30 @@ ZMK_SUBSCRIPTION(widget_battery_status, zmk_battery_state_changed);
 ZMK_SUBSCRIPTION(widget_battery_status, zmk_usb_conn_state_changed);
 #endif
 
-/* ─── output (BLE/USB) listener ──────────────────────────────────────────── */
+/* --- output (BLE/USB) listener --- */
 
 struct output_status_state {
     bool ble_connected;
     bool ble_bonded;
+    uint8_t active_profile;
 };
 
 static void output_status_update_cb(struct output_status_state st) {
     struct zmk_widget_central_status *w;
     SYS_SLIST_FOR_EACH_CONTAINER(&widgets, w, node) {
-        w->state.ble_connected = st.ble_connected;
-        w->state.ble_bonded    = st.ble_bonded;
-        draw_top(w->obj, w->cbuf_top, &w->state);
+        w->state.ble_connected   = st.ble_connected;
+        w->state.ble_bonded      = st.ble_bonded;
+        w->state.active_profile  = st.active_profile;
+        draw_battery(w->obj, w->cbuf_battery, &w->state);
+        draw_profile(w->obj, w->cbuf_profile, &w->state);
     }
 }
 
 static struct output_status_state output_get_state(const zmk_event_t *_eh) {
     return (struct output_status_state){
-        .ble_connected = zmk_ble_active_profile_is_connected(),
-        .ble_bonded    = !zmk_ble_active_profile_is_open(),
+        .ble_connected  = zmk_ble_active_profile_is_connected(),
+        .ble_bonded     = !zmk_ble_active_profile_is_open(),
+        .active_profile = zmk_ble_active_profile_index(),
     };
 }
 
@@ -287,7 +398,7 @@ ZMK_SUBSCRIPTION(widget_output_status, zmk_usb_conn_state_changed);
 ZMK_SUBSCRIPTION(widget_output_status, zmk_ble_active_profile_changed);
 #endif
 
-/* ─── layer listener ─────────────────────────────────────────────────────── */
+/* --- layer listener --- */
 
 struct layer_status_state {
     zmk_keymap_layer_index_t index;
@@ -299,7 +410,7 @@ static void layer_status_update_cb(struct layer_status_state st) {
     SYS_SLIST_FOR_EACH_CONTAINER(&widgets, w, node) {
         w->state.layer_index = st.index;
         w->state.layer_label = st.label;
-        draw_top(w->obj, w->cbuf_top, &w->state);
+        draw_layer(w->obj, w->cbuf_layer, &w->state);
     }
 }
 
@@ -315,18 +426,30 @@ ZMK_DISPLAY_WIDGET_LISTENER(widget_layer_status, struct layer_status_state,
                             layer_status_update_cb, layer_get_state)
 ZMK_SUBSCRIPTION(widget_layer_status, zmk_layer_state_changed);
 
-/* ─── key-press listener ─────────────────────────────────────────────────── */
+/* --- key-press listener --- */
 
 struct key_press_state {
     uint16_t usage_page;
     uint32_t keycode;
-    uint8_t  mods;      /* explicit_modifiers from the event */
+    uint8_t  mods;
     bool     pressed;
 };
 
 static void key_press_update_cb(struct key_press_state st) {
+    /* Track held modifier keys globally */
+    if (st.usage_page == HID_USAGE_KEY) {
+        int bit = mod_bit(st.keycode);
+        if (bit >= 0) {
+            if (st.pressed) {
+                held_mods |= BIT(bit);
+            } else {
+                held_mods &= ~BIT(bit);
+            }
+        }
+    }
+
     if (!st.pressed) {
-        return; /* only update on key-down */
+        return; /* only update display on key-down */
     }
 
     struct zmk_widget_central_status *w;
@@ -334,7 +457,7 @@ static void key_press_update_cb(struct key_press_state st) {
         const char *s = keycode_to_str(st.usage_page, st.keycode, st.mods);
         strncpy(w->state.key_str, s, sizeof(w->state.key_str) - 1);
         w->state.key_str[sizeof(w->state.key_str) - 1] = '\0';
-        draw_bottom(w->obj, w->cbuf_bot, &w->state);
+        draw_key(w->obj, w->cbuf_key, &w->state);
     }
 }
 
@@ -355,23 +478,44 @@ ZMK_DISPLAY_WIDGET_LISTENER(widget_key_press, struct key_press_state,
                             key_press_update_cb, key_press_get_state)
 ZMK_SUBSCRIPTION(widget_key_press, zmk_keycode_state_changed);
 
-/* ─── public init ────────────────────────────────────────────────────────── */
+/* --- public init --- */
 
 int zmk_widget_central_status_init(struct zmk_widget_central_status *widget,
                                     lv_obj_t *parent) {
     widget->obj = lv_obj_create(parent);
     lv_obj_set_size(widget->obj, 160, 68);
 
-    /* Top canvas: right half of the rotated display (layer + battery) */
-    lv_obj_t *top = lv_canvas_create(widget->obj);
-    lv_obj_align(top, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_canvas_set_buffer(top, widget->cbuf_top, CANVAS_SIZE, CANVAS_SIZE,
+    /* 4 canvases: each drawn as 68w x 40h, then rotated to 40w x 68h.
+     *
+     * On the 160x68 lv_obj, placed at:
+     *   canvas 0 (profile): x=120  (rightmost = top of user view)
+     *   canvas 1 (battery): x=80
+     *   canvas 2 (layer):   x=40
+     *   canvas 3 (key):     x=0    (leftmost = bottom of user view)
+     *
+     * Initially set to drawing dimensions (68w x 40h).
+     * Each draw function resets to draw mode, draws, then rotate_canvas_rect
+     * reconfigures to display mode (40w x 68h).
+     */
+
+    lv_obj_t *c0 = lv_canvas_create(widget->obj);
+    lv_obj_set_pos(c0, 120, 0);
+    lv_canvas_set_buffer(c0, widget->cbuf_profile, CANVAS_W, CANVAS_H,
                          LV_IMG_CF_TRUE_COLOR);
 
-    /* Bottom canvas: left half (big key glyph) */
-    lv_obj_t *bot = lv_canvas_create(widget->obj);
-    lv_obj_align(bot, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_canvas_set_buffer(bot, widget->cbuf_bot, CANVAS_SIZE, CANVAS_SIZE,
+    lv_obj_t *c1 = lv_canvas_create(widget->obj);
+    lv_obj_set_pos(c1, 80, 0);
+    lv_canvas_set_buffer(c1, widget->cbuf_battery, CANVAS_W, CANVAS_H,
+                         LV_IMG_CF_TRUE_COLOR);
+
+    lv_obj_t *c2 = lv_canvas_create(widget->obj);
+    lv_obj_set_pos(c2, 40, 0);
+    lv_canvas_set_buffer(c2, widget->cbuf_layer, CANVAS_W, CANVAS_H,
+                         LV_IMG_CF_TRUE_COLOR);
+
+    lv_obj_t *c3 = lv_canvas_create(widget->obj);
+    lv_obj_set_pos(c3, 0, 0);
+    lv_canvas_set_buffer(c3, widget->cbuf_key, CANVAS_W, CANVAS_H,
                          LV_IMG_CF_TRUE_COLOR);
 
     /* Initial state */

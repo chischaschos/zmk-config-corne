@@ -7,10 +7,19 @@
 
 #include <lvgl.h>
 
-#define CANVAS_SIZE 68
-
 /* nice!view is 160x68, mounted rotated 90 degrees.
- * Each of the three 68x68 canvas tiles is drawn upright then rotated. */
+ * The user sees it as 68 wide x 160 tall (portrait).
+ *
+ * Central (left) uses 4 tiles of 68x40 (drawn) -> 40x68 (rotated on screen).
+ * Peripheral (right) uses 2 tiles of 68x68 (drawn) -> 68x68 (rotated).
+ */
+
+#define CANVAS_W     68   /* drawing width  (= physical display height) */
+#define CANVAS_H     40   /* drawing height for central tiles */
+#define CANVAS_H_BIG 68   /* drawing height for peripheral tiles (square) */
+
+/* legacy alias — peripheral still uses square canvases */
+#define CANVAS_SIZE  68
 
 #define LVGL_BACKGROUND lv_color_black()
 #define LVGL_FOREGROUND lv_color_white()
@@ -23,6 +32,8 @@ struct battery_status_state {
 };
 
 void rotate_canvas(lv_obj_t *canvas, lv_color_t cbuf[]);
+void rotate_canvas_rect(lv_obj_t *canvas, lv_color_t cbuf[],
+                        uint16_t src_w, uint16_t src_h);
 void init_label_dsc(lv_draw_label_dsc_t *label_dsc, lv_color_t color, const lv_font_t *font,
                     lv_text_align_t align);
 void init_rect_dsc(lv_draw_rect_dsc_t *rect_dsc, lv_color_t bg_color);

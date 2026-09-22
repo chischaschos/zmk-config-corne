@@ -12,7 +12,8 @@
 struct zmk_widget_peripheral_status {
     sys_snode_t node;
     lv_obj_t   *obj;
-    lv_color_t  cbuf[CANVAS_SIZE * CANVAS_SIZE];
+    lv_color_t  cbuf_top[CANVAS_SIZE * CANVAS_SIZE];
+    lv_color_t  cbuf_bot[CANVAS_SIZE * CANVAS_SIZE];
 
     struct {
         uint8_t battery;
